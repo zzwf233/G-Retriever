@@ -1,5 +1,6 @@
 from tqdm import tqdm
 import gensim
+import os
 import torch
 from torch import nn
 import torch.nn.functional as F
@@ -8,7 +9,7 @@ from torch.utils.data import DataLoader
 import numpy as np
 
 pretrained_repo = 'sentence-transformers/all-roberta-large-v1'
-batch_size = 1024  # Adjust the batch size as needed
+batch_size = int(os.environ.get("G_RETRIEVER_EMB_BATCH_SIZE", 32))
 
 
 # replace with the path to the word2vec file
@@ -97,7 +98,8 @@ def load_sbert():
     tokenizer = AutoTokenizer.from_pretrained(pretrained_repo)
 
     # data parallel
-    if torch.cuda.device_count() > 1:
+    use_data_parallel = os.environ.get("G_RETRIEVER_EMB_DATA_PARALLEL", "0").lower() in ("1", "true", "yes")
+    if use_data_parallel and torch.cuda.device_count() > 1:
         print(f'Using {torch.cuda.device_count()} GPUs')
         model = nn.DataParallel(model)
 

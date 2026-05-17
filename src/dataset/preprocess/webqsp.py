@@ -80,18 +80,23 @@ def step_two():
     text2embedding = load_text2embedding[model_name]
 
     # encode questions
-    print('Encoding questions...')
-    q_embs = text2embedding(model, tokenizer, device, questions)
-    torch.save(q_embs, f'{path}/q_embs.pt')
+    if os.path.exists(f'{path}/q_embs.pt'):
+        print('Question embeddings already exist, skipping.')
+    else:
+        print('Encoding questions...')
+        q_embs = text2embedding(model, tokenizer, device, questions)
+        torch.save(q_embs, f'{path}/q_embs.pt')
 
     print('Encoding graphs...')
     os.makedirs(path_graphs, exist_ok=True)
     for index in tqdm(range(len(dataset))):
+        if os.path.exists(f'{path_graphs}/{index}.pt'):
+            continue
 
         # nodes
         nodes = pd.read_csv(f'{path_nodes}/{index}.csv')
         edges = pd.read_csv(f'{path_edges}/{index}.csv')
-        nodes.node_attr.fillna("", inplace=True)
+        nodes['node_attr'] = nodes['node_attr'].fillna("")
         if len(nodes) == 0:
             print(f'Empty graph at index {index}')
             continue

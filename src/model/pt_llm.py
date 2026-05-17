@@ -1,13 +1,13 @@
 import math
 import contextlib
 import torch
-from torch.cuda.amp import autocast as autocast
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from peft import (
     LoraConfig,
     get_peft_model,
     prepare_model_for_kbit_training,
 )
+from src.model.loading import configure_llama_for_training, llama_loading_kwargs
 
 BOS = '<s>[INST]'
 EOS_USER = '[/INST]'
@@ -30,11 +30,7 @@ class PromptTuningLLM(torch.nn.Module):
         num_virtual_tokens = args.llm_num_virtual_tokens
 
         print('Loading LLAMA')
-        kwargs = {
-            "max_memory": {0: '80GiB', 1: '80GiB'},
-            "device_map": "auto",
-            "revision": "main",
-        }
+        kwargs = llama_loading_kwargs(args)
         self.tokenizer = AutoTokenizer.from_pretrained(args.llm_model_path, use_fast=False, revision=kwargs["revision"])
         self.tokenizer.pad_token_id = 0
         self.tokenizer.padding_side = 'left'
@@ -71,6 +67,7 @@ class PromptTuningLLM(torch.nn.Module):
             )
             model = get_peft_model(model, config)
 
+        configure_llama_for_training(model, args)
         self.model = model
         print('Finish loading LLAMA!')
 
@@ -84,7 +81,8 @@ class PromptTuningLLM(torch.nn.Module):
             init_token_ids = init_token_ids * num_reps
         init_token_ids = init_token_ids[:num_virtual_tokens]
 
-        self.prompt = torch.nn.Parameter(self.word_embedding.weight[torch.LongTensor(init_token_ids)].detach().clone().to(torch.float32)).to(self.model.device)
+        embedding_device = self.word_embedding.weight.device
+        self.prompt = torch.nn.Parameter(self.word_embedding.weight[torch.tensor(init_token_ids, device=embedding_device)].detach().clone().to(torch.float32)).to(self.model.device)
 
     @property
     def device(self):
@@ -96,7 +94,7 @@ class PromptTuningLLM(torch.nn.Module):
         enable_autocast = self.device != torch.device("cpu")
 
         if enable_autocast:
-            return torch.cuda.amp.autocast(dtype=dtype)
+            return torch.amp.autocast("cuda", dtype=dtype)
         else:
             return contextlib.nullcontext()
 
@@ -110,8 +108,10 @@ class PromptTuningLLM(torch.nn.Module):
         # encode special tokens
         eos_tokens = self.tokenizer(EOS, add_special_tokens=False)
         eos_user_tokens = self.tokenizer(EOS_USER, add_special_tokens=False)
-        bos_embeds = self.word_embedding(self.tokenizer(BOS, add_special_tokens=False, return_tensors='pt').input_ids[0])
-        pad_embeds = self.word_embedding(torch.tensor(self.tokenizer.pad_token_id)).unsqueeze(0)
+        embedding_device = self.word_embedding.weight.device
+        bos_input_ids = self.tokenizer(BOS, add_special_tokens=False, return_tensors='pt').input_ids[0].to(embedding_device)
+        bos_embeds = self.word_embedding(bos_input_ids)
+        pad_embeds = self.word_embedding(torch.tensor(self.tokenizer.pad_token_id, device=embedding_device)).unsqueeze(0)
 
         batch_size = len(samples['id'])
         batch_inputs_embeds = []
@@ -122,7 +122,7 @@ class PromptTuningLLM(torch.nn.Module):
             # Add bos & eos token
             label_input_ids = labels.input_ids[i][:self.max_new_tokens] + eos_tokens.input_ids
             input_ids = descriptions.input_ids[i][:self.max_txt_len] + questions.input_ids[i] + eos_user_tokens.input_ids + label_input_ids
-            inputs_embeds = self.word_embedding(torch.tensor(input_ids).to(self.model.device))
+            inputs_embeds = self.word_embedding(torch.tensor(input_ids, device=embedding_device))
             inputs_embeds = torch.cat([bos_embeds, prompt_embeds, inputs_embeds], dim=0)
 
             batch_inputs_embeds.append(inputs_embeds)
@@ -160,8 +160,10 @@ class PromptTuningLLM(torch.nn.Module):
 
         # encode special tokens
         eos_user_tokens = self.tokenizer(EOS_USER, add_special_tokens=False)
-        bos_embeds = self.word_embedding(self.tokenizer(BOS, add_special_tokens=False, return_tensors='pt').input_ids[0])
-        pad_embeds = self.word_embedding(torch.tensor(self.tokenizer.pad_token_id)).unsqueeze(0)
+        embedding_device = self.word_embedding.weight.device
+        bos_input_ids = self.tokenizer(BOS, add_special_tokens=False, return_tensors='pt').input_ids[0].to(embedding_device)
+        bos_embeds = self.word_embedding(bos_input_ids)
+        pad_embeds = self.word_embedding(torch.tensor(self.tokenizer.pad_token_id, device=embedding_device)).unsqueeze(0)
 
         batch_size = len(samples['id'])
         batch_inputs_embeds = []
@@ -170,7 +172,7 @@ class PromptTuningLLM(torch.nn.Module):
         for i in range(batch_size):
             # Add bos & eos token
             input_ids = descriptions.input_ids[i][:self.max_txt_len] + questions.input_ids[i] + eos_user_tokens.input_ids
-            inputs_embeds = self.word_embedding(torch.tensor(input_ids).to(self.model.device))
+            inputs_embeds = self.word_embedding(torch.tensor(input_ids, device=embedding_device))
             inputs_embeds = torch.cat([bos_embeds, prompt_embeds, inputs_embeds], dim=0)
             batch_inputs_embeds.append(inputs_embeds)
             batch_attention_mask.append([1] * inputs_embeds.shape[0])

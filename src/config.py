@@ -1,7 +1,10 @@
 import argparse
 
 def csv_list(string):
-    return string.split(',')
+    return [int(item) for item in string.split(',')]
+
+def str2bool(string):
+    return str(string).lower() in ('true', '1', 'yes')
 
 def parse_args_llama():
     parser = argparse.ArgumentParser(description="G-Retriever")
@@ -32,9 +35,12 @@ def parse_args_llama():
     parser.add_argument("--llm_frozen", type=str, default='True')
     parser.add_argument("--llm_num_virtual_tokens", type=int, default=10)
     parser.add_argument("--output_dir", type=str, default='output')
+    parser.add_argument("--eval_only", type=str2bool, default=False)
+    parser.add_argument("--checkpoint_path", type=str, default='')
     parser.add_argument("--max_txt_len", type=int, default=512)
     parser.add_argument("--max_new_tokens", type=int, default=32)
-    parser.add_argument("--max_memory", type=csv_list, default=[80,80])
+    parser.add_argument("--max_memory", type=csv_list, default=None)
+    parser.add_argument("--gradient_checkpointing", type=str2bool, default=True)
 
     # GNN related
     parser.add_argument("--gnn_model_name", type=str, default='gt')

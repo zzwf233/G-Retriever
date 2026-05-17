@@ -54,7 +54,9 @@ coverage.xml
 docs/_build/
 
 # dataset
-#dataset/
+dataset/
+datasets/
+data/
 dataset/**/[0-9]*.csv
 dataset/**/*.pt
 dataset/gqa/val_sceneGraphs.json
@@ -62,7 +64,28 @@ dataset/gqa/train_sceneGraphs.json
 
 # logs and results
 logs/
+results/
+result/
 output/
+outputs/
+
+# models / checkpoints
+model/
+models/
+RoG-model/
+R6G-model/
+Llama-*/
+*.bin
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.safetensors.*
+*.filepart
+*.arrow
+*.parquet
+*.jsonl
+*.pdf
 
 # wandb
 wandb/

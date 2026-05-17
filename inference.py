@@ -3,14 +3,14 @@ import torch
 import wandb
 import gc
 from tqdm import tqdm
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Subset
 import json
 import pandas as pd
 from src.utils.seed import seed_everything
 from src.config import parse_args_llama
 from src.model import load_model, llama_model_path
 from src.dataset import load_dataset
-from src.utils.evaluate import eval_funcs
+from src.utils.evaluate import save_metrics
 from src.utils.collate import collate_fn
 
 
@@ -29,7 +29,7 @@ def main(args):
     idx_split = dataset.get_idx_split()
 
     # Step 2: Build Node Classification Dataset
-    test_dataset = [dataset[i] for i in idx_split['test']]
+    test_dataset = Subset(dataset, idx_split['test'])
     test_loader = DataLoader(test_dataset, batch_size=args.eval_batch_size, drop_last=False, pin_memory=True, shuffle=False, collate_fn=collate_fn)
 
     # Step 3: Build Model
@@ -53,9 +53,10 @@ def main(args):
             progress_bar_test.update(1)
 
     # Step 5. Post-processing & Evaluating
-    acc = eval_funcs[args.dataset](path)
+    metrics = save_metrics(args.dataset, path)
+    acc = metrics["Test Acc"]
     print(f'Test Acc {acc}')
-    wandb.log({'Test Acc': acc})
+    wandb.log(metrics)
 
 
 if __name__ == "__main__":
@@ -63,6 +64,7 @@ if __name__ == "__main__":
     args = parse_args_llama()
 
     main(args)
-    torch.cuda.empty_cache()
-    torch.cuda.reset_max_memory_allocated()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        torch.cuda.reset_max_memory_allocated()
     gc.collect()
